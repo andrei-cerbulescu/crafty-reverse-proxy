@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -25,7 +26,7 @@ type LoginPayload struct {
 }
 
 type Server struct {
-	ServerId int `json:"server_id"`
+	ServerId string `json:"server_id"`
 	Port     int `json:"server_port"`
 }
 
@@ -98,7 +99,7 @@ func startMcServer(server ServerType) {
 
 	defer serverListRes.Body.Close()
 
-	serversListBody, err := ioutil.ReadAll(serverListRes.Body)
+	serversListBody, err := io.ReadAll(serverListRes.Body)
 	if err != nil {
 		println("Error reading response body:", err)
 		return
@@ -112,7 +113,7 @@ func startMcServer(server ServerType) {
 
 	comparator := func(s Server) bool { return strings.Compare(strconv.Itoa(s.Port), internalPort) == 0 }
 	filteredServer := filter(serverList.Data, comparator)[0]
-	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + strconv.Itoa(filteredServer.ServerId) + "/action/start_server"
+	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + filteredServer.ServerId + "/action/start_server"
 	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
 	startServerReq.Header.Add("Authorization", bearer)
 	_, err = client.Do(startServerReq)
@@ -182,7 +183,7 @@ func stopMcServer(port int) {
 
 	comparator := func(s Server) bool { return s.Port == port }
 	server := filter(serverList.Data, comparator)[0]
-	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + strconv.Itoa(server.ServerId) + "/action/stop_server"
+	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
 	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
 	startServerReq.Header.Add("Authorization", bearer)
 	_, err = client.Do(startServerReq)
