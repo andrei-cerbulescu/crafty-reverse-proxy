@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
@@ -27,7 +26,7 @@ type LoginPayload struct {
 
 type Server struct {
 	ServerId string `json:"server_id"`
-	Port     int `json:"server_port"`
+	Port     int    `json:"server_port"`
 }
 
 type ServerList struct {
@@ -55,8 +54,7 @@ func awaitForServerStart(protocol string, target string) net.Conn {
 	return nil
 }
 
-func startMcServer(server ServerType) {
-	internalPort := server.InternalPort
+func getBearer() string {
 	loginBody := LoginPayload{
 		Username: getConfig().Username,
 		Password: getConfig().Password,
@@ -64,27 +62,26 @@ func startMcServer(server ServerType) {
 	jsonData, _ := json.Marshal(loginBody)
 	resp, err := http.Post(getConfig().ApiUrl+"/api/v2/auth/login", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		println("Error making POST request:", err)
-		return
+		panic("Could not connect to the server\n")
 	}
 
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		println("Error reading response body:", err)
-		return
+		panic("Could not read response body\n")
 	}
 
 	var response LoginResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		println("Error decoding JSON:", err)
-		return
+		panic("Could not decode JSON\n")
 	}
 
-	bearer := "Bearer " + response.Data.Token
+	return "Bearer " + response.Data.Token
+}
 
+func getServers(bearer string) ServerList {
 	client := &http.Client{}
 
 	serversListReq, _ := http.NewRequest("GET", getConfig().ApiUrl+"/api/v2/servers", nil)
@@ -93,103 +90,71 @@ func startMcServer(server ServerType) {
 	serverListRes, err := client.Do(serversListReq)
 
 	if err != nil {
-		println("Error getting servers:", err)
-		return
+		panic("Error getting servers: " + err.Error() + "\n")
 	}
 
 	defer serverListRes.Body.Close()
 
 	serversListBody, err := io.ReadAll(serverListRes.Body)
 	if err != nil {
-		println("Error reading response body:", err)
-		return
+		panic("Error reading response body: " + err.Error() + "\n")
 	}
 	var serverList ServerList
 	err = json.Unmarshal(serversListBody, &serverList)
 	if err != nil {
-		println("Error decoding JSON:", err)
-		return
+		panic("Error decoding JSON: " + err.Error() + "\n")
 	}
+
+	return serverList
+}
+
+func startMcServerCall(server Server, bearer string) {
+	client := &http.Client{}
+	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/start_server"
+	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
+	startServerReq.Header.Add("Authorization", bearer)
+	_, err := client.Do(startServerReq)
+
+	if err != nil {
+		panic("Error getting servers: " + err.Error() + "\n")
+	}
+}
+
+func stopMcServerCall(server Server, bearer string) {
+	client := &http.Client{}
+
+	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
+	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
+	startServerReq.Header.Add("Authorization", bearer)
+	_, err := client.Do(startServerReq)
+
+	if err != nil {
+		panic("Error getting servers: " + err.Error() + "\n")
+	}
+}
+
+func startMcServer(server ServerType) {
+	internalPort := server.InternalPort
+
+	bearer := getBearer()
+
+	serverList := getServers(bearer)
 
 	comparator := func(s Server) bool { return strings.Compare(strconv.Itoa(s.Port), internalPort) == 0 }
 	filteredServer := filter(serverList.Data, comparator)[0]
-	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + filteredServer.ServerId + "/action/start_server"
-	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
-	startServerReq.Header.Add("Authorization", bearer)
-	_, err = client.Do(startServerReq)
 
-	if err != nil {
-		println("Error getting servers:", err)
-		return
-	}
+	startMcServerCall(filteredServer, bearer)
 
 	scheduleStopServerIfEmpty(server)
 }
 
 func stopMcServer(port int) {
-	loginBody := LoginPayload{
-		Username: getConfig().Username,
-		Password: getConfig().Password,
-	}
-	jsonData, _ := json.Marshal(loginBody)
-	resp, err := http.Post(getConfig().ApiUrl+"/api/v2/auth/login", "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		println("Error making POST request:", err)
-		return
-	}
+	bearer := getBearer()
 
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		println("Error reading response body:", err)
-		return
-	}
-
-	var response LoginResponse
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		println("Error decoding JSON:", err)
-		return
-	}
-
-	bearer := "Bearer " + response.Data.Token
-
-	client := &http.Client{}
-
-	serversListReq, _ := http.NewRequest("GET", getConfig().ApiUrl+"/api/v2/servers", nil)
-	serversListReq.Header.Add("Authorization", bearer)
-
-	serverListRes, err := client.Do(serversListReq)
-
-	if err != nil {
-		println("Error getting servers:", err)
-		return
-	}
-
-	defer serverListRes.Body.Close()
-
-	serversListBody, err := ioutil.ReadAll(serverListRes.Body)
-	if err != nil {
-		println("Error reading response body:", err)
-		return
-	}
-	var serverList ServerList
-	err = json.Unmarshal(serversListBody, &serverList)
-	if err != nil {
-		println("Error decoding JSON:", err)
-		return
-	}
+	var serverList = getServers(bearer)
 
 	comparator := func(s Server) bool { return s.Port == port }
 	server := filter(serverList.Data, comparator)[0]
-	startServerUrl := getConfig().ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
-	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
-	startServerReq.Header.Add("Authorization", bearer)
-	_, err = client.Do(startServerReq)
 
-	if err != nil {
-		println("Error getting servers:", err)
-		return
-	}
+	stopMcServerCall(server, bearer)
 }
