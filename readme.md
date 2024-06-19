@@ -35,7 +35,7 @@ You should create a folder in your folder called "craftyreverseproxy" and create
 This is a sample of the config.json:
 ```
 {
-  "api_url": "https://crafty_container:8443",
+  "api_url": "https://crafty:8443",
   "username": "crafty-username",
   "password": "crafty-password",
   "addresses": [
