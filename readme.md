@@ -28,6 +28,9 @@ craftyreverseproxy:
     - "3120-3130:3120-3130"
   volumes:
     - ./craftyreverseproxy:/craftyproxy
+  depends_on:
+    crafty:
+      condition: service_started
   restart: unless-stopped
 ```
 
