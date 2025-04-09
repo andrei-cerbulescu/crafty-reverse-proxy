@@ -43,7 +43,7 @@ func scheduleStopServerIfEmpty(server ServerType) {
 	if(getConfig().AutoShutdown == false){
 		return
 	}
-	time.AfterFunc(getConfig().Timeout*time.Minute, func (){
+	time.AfterFunc(time.Duration(getConfig().Timeout)*time.Minute, func() {
 		stopServerIfEmpty(server)
 })
 }
