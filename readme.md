@@ -41,6 +41,8 @@ This is a sample of the config.json:
   "api_url": "https://crafty:8443",
   "username": "crafty-username",
   "password": "crafty-password",
+  "timeout": 5,
+  "auto_shutdown": true,
   "addresses": [
     {
       "internal_ip": "crafty",
@@ -65,6 +67,8 @@ internal_ip = crafty ip
 internal_port = crafty port
 external_ip = reverse proxy ip
 external_port = reverse proxy port
+timeout = the timeout when the server will be shutdown after it is empty
+auto_shutdown = enable or disable the auto shutdown when empty
 
 For docker compose, the ip is the container's name. Make sure you expose the ports of the craftyreverseproxy in your docker-compose.
 

@@ -27,6 +27,8 @@ type Config struct {
 	ApiUrl string `json:"api_url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Timeout int `json:"timeout"`
+	AutoShutdown bool `json:"auto_shutdown"`
 	Addresses []ServerType `json:"addresses"`
 }
 
