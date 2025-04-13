@@ -25,13 +25,13 @@ func AwaitForServerStart(protocol string, target string) net.Conn {
 	return nil
 }
 
-func getBearer() string {
+func getBearer(cfg config.Config) string {
 	loginBody := LoginPayload{
-		Username: config.GetConfig().Username,
-		Password: config.GetConfig().Password,
+		Username: cfg.Username,
+		Password: cfg.Password,
 	}
 	jsonData, _ := json.Marshal(loginBody)
-	resp, err := http.Post(config.GetConfig().ApiUrl+"/api/v2/auth/login", "application/json", bytes.NewBuffer(jsonData))
+	resp, err := http.Post(cfg.ApiUrl+"/api/v2/auth/login", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		panic("Could not connect to the server\n")
 	}
@@ -52,10 +52,10 @@ func getBearer() string {
 	return "Bearer " + response.Data.Token
 }
 
-func getServers(bearer string) ServerList {
+func getServers(bearer string, cfg config.Config) ServerList {
 	client := &http.Client{}
 
-	serversListReq, _ := http.NewRequest("GET", config.GetConfig().ApiUrl+"/api/v2/servers", nil)
+	serversListReq, _ := http.NewRequest("GET", cfg.ApiUrl+"/api/v2/servers", nil)
 	serversListReq.Header.Add("Authorization", bearer)
 
 	serverListRes, err := client.Do(serversListReq)
@@ -79,9 +79,9 @@ func getServers(bearer string) ServerList {
 	return serverList
 }
 
-func startMcServerCall(server Server, bearer string) {
+func startMcServerCall(server Server, bearer string, cfg config.Config) {
 	client := &http.Client{}
-	startServerUrl := config.GetConfig().ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/start_server"
+	startServerUrl := cfg.ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/start_server"
 	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
 	startServerReq.Header.Add("Authorization", bearer)
 	_, err := client.Do(startServerReq)
@@ -91,10 +91,10 @@ func startMcServerCall(server Server, bearer string) {
 	}
 }
 
-func stopMcServerCall(server Server, bearer string) {
+func stopMcServerCall(server Server, bearer string, cfg config.Config) {
 	client := &http.Client{}
 
-	startServerUrl := config.GetConfig().ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
+	startServerUrl := cfg.ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
 	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
 	startServerReq.Header.Add("Authorization", bearer)
 	_, err := client.Do(startServerReq)
@@ -104,26 +104,26 @@ func stopMcServerCall(server Server, bearer string) {
 	}
 }
 
-func StartMcServer(server config.ServerType) {
+func StartMcServer(server config.ServerType, cfg config.Config) {
 	internalPort := server.InternalPort
 
-	bearer := getBearer()
+	bearer := getBearer(cfg)
 
-	serverList := getServers(bearer)
+	serverList := getServers(bearer, cfg)
 
 	comparator := func(s Server) bool { return strings.Compare(strconv.Itoa(s.Port), internalPort) == 0 }
 	filteredServer := filter(serverList.Data, comparator)[0]
 
-	startMcServerCall(filteredServer, bearer)
+	startMcServerCall(filteredServer, bearer, cfg)
 }
 
-func StopMcServer(port int) {
-	bearer := getBearer()
+func StopMcServer(port int, cfg config.Config) {
+	bearer := getBearer(cfg)
 
-	var serverList = getServers(bearer)
+	var serverList = getServers(bearer, cfg)
 
 	comparator := func(s Server) bool { return s.Port == port }
 	server := filter(serverList.Data, comparator)[0]
 
-	stopMcServerCall(server, bearer)
+	stopMcServerCall(server, bearer, cfg)
 }

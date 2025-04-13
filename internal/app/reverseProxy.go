@@ -9,14 +9,14 @@ import (
 	"net"
 )
 
-func handleClient(client net.Conn, target string, server config.ServerType, protocol string) {
-	incrementPlayerCount(server)
-	defer decrementPlayerCount(server)
+func (app *App) handleClient(client net.Conn, target string, server config.ServerType, protocol string) {
+	app.incrementPlayerCount(server)
+	defer app.decrementPlayerCount(server)
 	serverConnection, err := net.Dial(protocol, target)
 	if err != nil {
 		println("Server not up and running: " + err.Error() + "\n")
-		crafty.StartMcServer(server)
-		scheduleStopServerIfEmpty(server)
+		crafty.StartMcServer(server, app.cfg)
+		app.scheduleStopServerIfEmpty(server)
 		serverConnection = crafty.AwaitForServerStart(protocol, target)
 		if serverConnection == nil {
 			client.Close()
@@ -41,7 +41,7 @@ func handleClient(client net.Conn, target string, server config.ServerType, prot
 	}
 }
 
-func handleMainServer(server config.ServerType) {
+func (app *App) handleMainServer(server config.ServerType) {
 	listenAddr := server.ExternalIp + ":" + server.ExternalPort
 	targetAddr := server.InternalIp + ":" + server.InternalPort
 
@@ -63,11 +63,11 @@ func handleMainServer(server config.ServerType) {
 			continue
 		}
 
-		go handleClient(client, targetAddr, server, server.Protocol)
+		go app.handleClient(client, targetAddr, server, server.Protocol)
 	}
 }
 
-func handleSubServers(subServer config.OthersType, server config.ServerType) {
+func (app *App) handleSubServers(subServer config.OthersType, server config.ServerType) {
 	listenAddr := subServer.ExternalIp + ":" + subServer.ExternalPort
 	targetAddr := subServer.InternalIp + ":" + subServer.InternalPort
 
@@ -86,14 +86,14 @@ func handleSubServers(subServer config.OthersType, server config.ServerType) {
 			continue
 		}
 
-		go handleClient(client, targetAddr, server, subServer.Protocol)
+		go app.handleClient(client, targetAddr, server, subServer.Protocol)
 	}
 }
 
-func handleServer(server config.ServerType) {
-	handleMainServer(server)
+func (app *App) handleServer(server config.ServerType) {
+	app.handleMainServer(server)
 
 	for _, subServer := range server.Others {
-		handleSubServers(subServer, server)
+		app.handleSubServers(subServer, server)
 	}
 }

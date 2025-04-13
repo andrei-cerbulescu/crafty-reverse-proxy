@@ -7,56 +7,54 @@ import (
 	"time"
 )
 
-var playerMap *map[string]int
-
 func indexFromServer(server config.ServerType) string {
 	return server.InternalIp + ":" + server.InternalPort
 }
 
-func getPlayerMap() *map[string]int {
-	if playerMap == nil {
+func (app *App) getPlayerMap() map[string]int {
+	if app.playerMap == nil {
 		intermediaryPlayerMap := make(map[string]int)
-		for _, elem := range config.GetConfig().Addresses {
+		for _, elem := range app.cfg.Addresses {
 			intermediaryPlayerMap[indexFromServer(elem)] = 0
 		}
 
-		playerMap = &intermediaryPlayerMap
+		app.playerMap = intermediaryPlayerMap
 	}
 
-	return playerMap
+	return app.playerMap
 }
 
-func decrementPlayerCount(server config.ServerType) {
-	(*getPlayerMap())[indexFromServer(server)]--
-	if isServerEmpty(server) {
-		scheduleStopServerIfEmpty(server)
+func (app *App) decrementPlayerCount(server config.ServerType) {
+	app.getPlayerMap()[indexFromServer(server)]--
+	if app.isServerEmpty(server) {
+		app.scheduleStopServerIfEmpty(server)
 	}
 }
 
-func incrementPlayerCount(server config.ServerType) {
-	(*getPlayerMap())[indexFromServer(server)]++
+func (app *App) incrementPlayerCount(server config.ServerType) {
+	app.getPlayerMap()[indexFromServer(server)]++
 }
 
-func isServerEmpty(server config.ServerType) bool {
-	return (*getPlayerMap())[indexFromServer(server)] == 0
+func (app *App) isServerEmpty(server config.ServerType) bool {
+	return app.getPlayerMap()[indexFromServer(server)] == 0
 }
 
-func scheduleStopServerIfEmpty(server config.ServerType) {
-	if !config.GetConfig().AutoShutdown {
+func (app *App) scheduleStopServerIfEmpty(server config.ServerType) {
+	if !app.cfg.AutoShutdown {
 		return
 	}
-	time.AfterFunc(time.Duration(config.GetConfig().Timeout)*time.Minute, func() {
-		stopServerIfEmpty(server)
+	time.AfterFunc(time.Duration(app.cfg.Timeout)*time.Minute, func() {
+		app.stopServerIfEmpty(server)
 	})
 }
 
-func stopServerIfEmpty(server config.ServerType) {
+func (app *App) stopServerIfEmpty(server config.ServerType) {
 	internalPort := server.InternalPort
-	if isServerEmpty(server) {
+	if app.isServerEmpty(server) {
 		port, err := strconv.Atoi(internalPort)
 		if err != nil {
 			println("Expected number port but got: " + internalPort + "\n" + err.Error() + "\n")
 		}
-		crafty.StopMcServer(port)
+		crafty.StopMcServer(port, app.cfg)
 	}
 }

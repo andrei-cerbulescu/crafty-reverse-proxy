@@ -1,77 +1,92 @@
 package config
 
 import (
-	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type OthersType struct {
-	ExternalPort string `json:"external_port"`
-	ExternalIp   string `json:"external_ip"`
-	InternalIp   string `json:"internal_ip"`
-	InternalPort string `json:"internal_port"`
-	Protocol     string `json:"protocol"`
+	ExternalPort string `yaml:"external_port"`
+	ExternalIp   string `yaml:"external_ip"`
+	InternalIp   string `yaml:"internal_ip"`
+	InternalPort string `yaml:"internal_port"`
+	Protocol     string `yaml:"protocol"`
 }
 
 type ServerType struct {
-	ExternalPort string       `json:"external_port"`
-	ExternalIp   string       `json:"external_ip"`
-	InternalIp   string       `json:"internal_ip"`
-	InternalPort string       `json:"internal_port"`
-	Protocol     string       `json:"protocol"`
-	Others       []OthersType `json:"others"`
+	ExternalPort string       `yaml:"external_port"`
+	ExternalIp   string       `yaml:"external_ip"`
+	InternalIp   string       `yaml:"internal_ip"`
+	InternalPort string       `yaml:"internal_port"`
+	Protocol     string       `yaml:"protocol"`
+	Others       []OthersType `yaml:"others"`
 }
 
 type Config struct {
-	ApiUrl       string       `json:"api_url"`
-	Username     string       `json:"username"`
-	Password     string       `json:"password"`
-	Timeout      int          `json:"timeout"`
-	AutoShutdown bool         `json:"auto_shutdown"`
-	Addresses    []ServerType `json:"addresses"`
+	ApiUrl       string        `yaml:"api_url"`
+	Username     string        `yaml:"username"`
+	Password     string        `yaml:"password"`
+	Timeout      time.Duration `yaml:"timeout"`
+	AutoShutdown bool          `yaml:"auto_shutdown"`
+	Addresses    []ServerType  `yaml:"addresses"`
 }
 
-func loadConfig() Config {
-	file, err := os.Open("./config.json")
-	if err != nil {
-		_, err = os.Create("./config.json")
-		if err != nil {
-			panic("Could not open config\n")
-		}
-
-		err = os.Chmod("./config.json", 0755)
-		if err != nil {
-			panic("Created a file but could not chmod it\n")
-		}
-
-		panic("Could not open config\nCreated one config file before exiting\n")
+// NewConfig returns default config
+func NewConfig() Config {
+	return Config{
+		ApiUrl:       "https://crafty:8443",
+		Username:     "admin",
+		Password:     "password",
+		Timeout:      time.Minute * 5,
+		AutoShutdown: false,
+		Addresses: []ServerType{
+			{
+				ExternalPort: "3120",
+				ExternalIp:   "craftyreverseproxy",
+				InternalIp:   "crafty",
+				InternalPort: "25565",
+				Protocol:     "tcp",
+			},
+		},
 	}
+}
 
+// Load loads a config from given path.
+// It will create default config if there is no config file.
+func (c *Config) Load(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			defaultConfig := NewConfig()
+			data, marshalErr := yaml.Marshal(defaultConfig)
+			if marshalErr != nil {
+				return fmt.Errorf("failed to marshal default config: %w", marshalErr)
+			}
+
+			writeErr := os.WriteFile(path, data, 0644)
+			if writeErr != nil {
+				return fmt.Errorf("failed to write default config file: %w", writeErr)
+			}
+
+			return fmt.Errorf("config file not found — created default at %s", path)
+		}
+
+		return fmt.Errorf("could not open config file: %w", err)
+	}
 	defer file.Close()
 
-	byteValue, err := io.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
-		panic("Could not read config\n")
+		return fmt.Errorf("could not read config file: %w", err)
 	}
 
-	var config Config
-	err = json.Unmarshal(byteValue, &config)
-
-	if err != nil {
-		panic("Could not parse config\n")
+	if err := yaml.Unmarshal(data, c); err != nil {
+		return fmt.Errorf("could not parse yaml config: %w", err)
 	}
 
-	return config
-}
-
-var singleConfigInstance *Config
-
-func GetConfig() *Config {
-	if singleConfigInstance == nil {
-		var config = loadConfig()
-		singleConfigInstance = &config
-	}
-
-	return singleConfigInstance
+	return nil
 }
