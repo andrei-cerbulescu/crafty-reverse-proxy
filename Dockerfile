@@ -16,4 +16,4 @@ FROM alpine:3.21
 
 COPY --from=builder  /craftyproxy/main /craftyproxy/main
 
-CMD [ "/craftyproxy/main" ]
+CMD [ "/craftyproxy/main", "-c", "/craftyproxy/config/config.yaml" ]

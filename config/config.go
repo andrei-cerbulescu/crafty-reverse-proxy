@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"time"
 
@@ -43,8 +44,8 @@ func NewConfig() Config {
 			{
 				Protocol: "tcp",
 				Listener: Host{
-					Addr: "crafty-reverse-proxy",
-					Port: 3120,
+					Addr: "127.0.0.1",
+					Port: 25565,
 				},
 				CraftyHost: Host{
 					Addr: "crafty",
@@ -72,7 +73,8 @@ func (c *Config) Load(path string) error {
 				return fmt.Errorf("failed to write default config file: %w", writeErr)
 			}
 
-			return fmt.Errorf("config file not found — created default at %s", path)
+			log.Printf("config file not found — created default at %s\n", path)
+			return nil
 		}
 
 		return fmt.Errorf("could not open config file: %w", err)

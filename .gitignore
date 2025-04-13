@@ -1,3 +1,4 @@
 config/dev.yaml
 .vscode/
 .zed/
+data/
