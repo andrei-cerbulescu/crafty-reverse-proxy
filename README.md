@@ -6,7 +6,7 @@ The reverse proxy will automatically turn on the server when someone tries to co
 
 It is mostly intended to be used in docker compose
 This is a sample of my config
-```
+```yaml
 crafty:
   container_name: crafty
   image: registry.gitlab.com/crafty-controller/crafty-4:latest
@@ -34,41 +34,32 @@ craftyreverseproxy:
   restart: unless-stopped
 ```
 
-You should create a folder in your folder called "craftyreverseproxy" and create a "config.json" file inside of it.
-This is a sample of the config.json:
+You should create a folder in your folder called "craftyreverseproxy" and create a "config.yaml" file inside of it.
+This is a sample of the config.yaml:
+```yaml
+api_url: "http://crafty:8443"
+username: "admin"
+password: "password"
+timeout: "2m"
+auto_shutdown: true
+log_level: "INFO"
+
+addresses:
+  - crafty_host:
+      addr: "crafty"
+      port: 25565
+    listener:
+      addr: "localhost"
+      port: 25565
+    protocol: "tcp"
+  - crafty_host:
+      addr: "crafty"
+      port: 25566
+    listener:
+      addr: "localhost"
+      port: 25566
+    protocol: "tcp"
 ```
-{
-  "api_url": "https://crafty:8443",
-  "username": "crafty-username",
-  "password": "crafty-password",
-  "timeout": 5,
-  "auto_shutdown": true,
-  "addresses": [
-    {
-      "internal_ip": "crafty",
-      "internal_port": "25565",
-      "external_ip": "craftyreverseproxy",
-      "external_port": "3120",
-      "protocol": "tcp",
-      "Others": []
-    },
-    {
-      "internal_ip": "crafty",
-      "internal_port": "25566",
-      "external_ip": "craftyreverseproxy",
-      "external_port": "3121",
-      "protocol": "tcp",
-      "Others": []
-    }
-  ]
-}
-```
-internal_ip = crafty ip
-internal_port = crafty port
-external_ip = reverse proxy ip
-external_port = reverse proxy port
-timeout = the timeout when the server will be shutdown after it is empty
-auto_shutdown = enable or disable the auto shutdown when empty
 
 For docker compose, the ip is the container's name. Make sure you expose the ports of the craftyreverseproxy in your docker-compose.
 
