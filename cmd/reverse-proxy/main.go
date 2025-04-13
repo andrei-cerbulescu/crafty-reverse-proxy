@@ -1,20 +1,32 @@
 package main
 
 import (
+	"context"
 	"craftyreverseproxy/config"
+	"craftyreverseproxy/internal/adapters/crafty"
 	"craftyreverseproxy/internal/app"
+	"craftyreverseproxy/pkg/logger"
+	"flag"
 	"log"
 )
 
-const configPath = "config.yaml"
-
 func main() {
+	ctx := context.Background()
+
+	configPath := "config/config.yaml"
+
+	flag.StringVar(&configPath, "c", "config/config.yaml", "Path to config file")
+
 	cfg := config.NewConfig()
 	err := cfg.Load(configPath)
 	if err != nil {
 		log.Fatal("Failed to start app, err:", err)
 	}
 
-	reverseProxyApp := app.NewApp(cfg)
-	reverseProxyApp.Run()
+	logger := logger.New(cfg.LogLevel)
+
+	crafty := crafty.Crafty{}
+	reverseProxyApp := app.NewApp(cfg, logger, &crafty)
+
+	reverseProxyApp.Run(ctx)
 }

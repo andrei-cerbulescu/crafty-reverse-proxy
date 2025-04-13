@@ -9,27 +9,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Host struct {
+	Addr string `yaml:"addr"`
+	Port int    `yaml:"port"`
+}
+
 type OthersType struct {
-	ExternalPort string `yaml:"external_port"`
-	ExternalIp   string `yaml:"external_ip"`
-	InternalIp   string `yaml:"internal_ip"`
-	InternalPort string `yaml:"internal_port"`
-	Protocol     string `yaml:"protocol"`
+	Protocol string `yaml:"protocol"`
 }
 
 type ServerType struct {
-	ExternalPort string       `yaml:"external_port"`
-	ExternalIp   string       `yaml:"external_ip"`
-	InternalIp   string       `yaml:"internal_ip"`
-	InternalPort string       `yaml:"internal_port"`
-	Protocol     string       `yaml:"protocol"`
-	Others       []OthersType `yaml:"others"`
+	Protocol  string       `yaml:"protocol"`
+	Listener  Host         `yaml:"listener"`
+	ProxyHost Host         `yaml:"proxy_host"`
+	Others    []OthersType `yaml:"others"`
 }
 
 type Config struct {
 	ApiUrl       string        `yaml:"api_url"`
 	Username     string        `yaml:"username"`
 	Password     string        `yaml:"password"`
+	LogLevel     string        `yaml:"log_level"`
 	Timeout      time.Duration `yaml:"timeout"`
 	AutoShutdown bool          `yaml:"auto_shutdown"`
 	Addresses    []ServerType  `yaml:"addresses"`
@@ -41,15 +41,20 @@ func NewConfig() Config {
 		ApiUrl:       "https://crafty:8443",
 		Username:     "admin",
 		Password:     "password",
+		LogLevel:     "INFO",
 		Timeout:      time.Minute * 5,
-		AutoShutdown: false,
+		AutoShutdown: true,
 		Addresses: []ServerType{
 			{
-				ExternalPort: "3120",
-				ExternalIp:   "craftyreverseproxy",
-				InternalIp:   "crafty",
-				InternalPort: "25565",
-				Protocol:     "tcp",
+				Protocol: "tcp",
+				Listener: Host{
+					Addr: "crafty-reverse-proxy",
+					Port: 3120,
+				},
+				ProxyHost: Host{
+					Addr: "crafty",
+					Port: 25565,
+				},
 			},
 		},
 	}

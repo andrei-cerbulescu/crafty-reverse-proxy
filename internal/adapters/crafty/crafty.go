@@ -4,126 +4,152 @@ import (
 	"bytes"
 	"craftyreverseproxy/config"
 	"encoding/json"
+	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"strconv"
-	"strings"
-	"time"
 )
 
-func AwaitForServerStart(protocol string, target string) net.Conn {
-	for i := 0; i < 25; i++ {
-		conn, err := net.Dial(protocol, target)
-		if err == nil {
-			return conn
-		}
+type Crafty struct {
+	apiUrl   string
+	username string
+	password string
+	client   *http.Client
+}
 
-		time.Sleep(2 * time.Second)
+func NewCrafty(cfg config.Config) *Crafty {
+	return &Crafty{
+		apiUrl:   cfg.ApiUrl,
+		username: cfg.Username,
+		password: cfg.Password,
+		client:   &http.Client{},
+	}
+}
+
+func (c *Crafty) StartMcServer(port int) error {
+	bearer, err := c.getBearer()
+	if err != nil {
+		return fmt.Errorf("%w, %v", ErrAuthorizationFailed, err)
+	}
+
+	serverList, err := c.getServers(bearer)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToGetServers, err)
+	}
+
+	for _, server := range serverList.Data {
+		if server.Port == port {
+			c.sendStartServerRequest(server, bearer)
+			return nil
+		}
+	}
+
+	return ErrNoSuchServer
+}
+
+func (c *Crafty) StopMcServer(port int) error {
+	bearer, err := c.getBearer()
+	if err != nil {
+		return fmt.Errorf("%w, %v", ErrAuthorizationFailed, err)
+	}
+
+	serverList, err := c.getServers(bearer)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToGetServers, err)
+	}
+
+	for _, server := range serverList.Data {
+		if server.Port == port {
+			c.sendStopServerRequest(server, bearer)
+			return nil
+		}
+	}
+
+	return ErrNoSuchServer
+}
+
+func (c *Crafty) sendStartServerRequest(server Server, bearer string) error {
+	startServerUrl := c.apiUrl + "/api/v2/servers/" + server.ServerId + "/action/start_server"
+	request, err := http.NewRequest(http.MethodPost, startServerUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	request.Header.Add("Authorization", bearer)
+	_, err = c.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("%w, id %s, port %d: %v", ErrFailedToStartServer, server.ServerId, server.Port, err)
 	}
 
 	return nil
 }
 
-func getBearer(cfg config.Config) string {
-	loginBody := LoginPayload{
-		Username: cfg.Username,
-		Password: cfg.Password,
-	}
-	jsonData, _ := json.Marshal(loginBody)
-	resp, err := http.Post(cfg.ApiUrl+"/api/v2/auth/login", "application/json", bytes.NewBuffer(jsonData))
+func (c *Crafty) sendStopServerRequest(server Server, bearer string) error {
+	stopServerUrl := c.apiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
+	request, err := http.NewRequest(http.MethodPost, stopServerUrl, nil)
 	if err != nil {
-		panic("Could not connect to the server\n")
+		return err
 	}
 
+	request.Header.Add("Authorization", bearer)
+	_, err = c.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("%w, id %s, port %d: %v", ErrFailedToStopServer, server.ServerId, server.Port, err)
+	}
+
+	return nil
+}
+
+func (c *Crafty) getBearer() (string, error) {
+	loginBody := LoginPayload{
+		Username: c.username,
+		Password: c.password,
+	}
+
+	jsonData, err := json.Marshal(loginBody)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.Post(c.apiUrl+"/api/v2/auth/login", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
+	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		panic("Could not read response body\n")
+		return "", fmt.Errorf("%w: %v", ErrFailedToReadBody, err)
 	}
 
 	var response LoginResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		panic("Could not decode JSON\n")
+		return "", err
 	}
 
-	return "Bearer " + response.Data.Token
+	return fmt.Sprintf("Bearer %s", response.Data.Token), nil
 }
 
-func getServers(bearer string, cfg config.Config) ServerList {
-	client := &http.Client{}
+func (c *Crafty) getServers(bearer string) (ServerList, error) {
+	request, _ := http.NewRequest(http.MethodGet, c.apiUrl+"/api/v2/servers", nil)
+	request.Header.Add("Authorization", bearer)
 
-	serversListReq, _ := http.NewRequest("GET", cfg.ApiUrl+"/api/v2/servers", nil)
-	serversListReq.Header.Add("Authorization", bearer)
-
-	serverListRes, err := client.Do(serversListReq)
-
+	response, err := c.client.Do(request)
 	if err != nil {
-		panic("Error getting servers: " + err.Error() + "\n")
+		return ServerList{}, fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
+	}
+	defer response.Body.Close()
+
+	serversListBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return ServerList{}, fmt.Errorf("%w: %v", ErrFailedToReadBody, err)
 	}
 
-	defer serverListRes.Body.Close()
-
-	serversListBody, err := io.ReadAll(serverListRes.Body)
-	if err != nil {
-		panic("Error reading response body: " + err.Error() + "\n")
-	}
 	var serverList ServerList
 	err = json.Unmarshal(serversListBody, &serverList)
 	if err != nil {
-		panic("Error decoding JSON: " + err.Error() + "\n")
+		return ServerList{}, err
 	}
 
-	return serverList
-}
-
-func startMcServerCall(server Server, bearer string, cfg config.Config) {
-	client := &http.Client{}
-	startServerUrl := cfg.ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/start_server"
-	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
-	startServerReq.Header.Add("Authorization", bearer)
-	_, err := client.Do(startServerReq)
-
-	if err != nil {
-		panic("Error getting servers: " + err.Error() + "\n")
-	}
-}
-
-func stopMcServerCall(server Server, bearer string, cfg config.Config) {
-	client := &http.Client{}
-
-	startServerUrl := cfg.ApiUrl + "/api/v2/servers/" + server.ServerId + "/action/stop_server"
-	startServerReq, _ := http.NewRequest("POST", startServerUrl, nil)
-	startServerReq.Header.Add("Authorization", bearer)
-	_, err := client.Do(startServerReq)
-
-	if err != nil {
-		panic("Error getting servers: " + err.Error() + "\n")
-	}
-}
-
-func StartMcServer(server config.ServerType, cfg config.Config) {
-	internalPort := server.InternalPort
-
-	bearer := getBearer(cfg)
-
-	serverList := getServers(bearer, cfg)
-
-	comparator := func(s Server) bool { return strings.Compare(strconv.Itoa(s.Port), internalPort) == 0 }
-	filteredServer := filter(serverList.Data, comparator)[0]
-
-	startMcServerCall(filteredServer, bearer, cfg)
-}
-
-func StopMcServer(port int, cfg config.Config) {
-	bearer := getBearer(cfg)
-
-	var serverList = getServers(bearer, cfg)
-
-	comparator := func(s Server) bool { return s.Port == port }
-	server := filter(serverList.Data, comparator)[0]
-
-	stopMcServerCall(server, bearer, cfg)
+	return serverList, nil
 }
