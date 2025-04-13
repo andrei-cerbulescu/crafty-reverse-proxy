@@ -2,12 +2,13 @@ package proxy
 
 import (
 	"context"
-	"craftyreverseproxy/config"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/andrei-cerbulescu/crafty-reverse-proxy/config"
 )
 
 const tickerCooldown = 1 * time.Second

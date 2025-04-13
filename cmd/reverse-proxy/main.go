@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"craftyreverseproxy/config"
-	"craftyreverseproxy/internal/adapters/crafty"
-	"craftyreverseproxy/internal/app"
-	"craftyreverseproxy/pkg/logger"
 	"flag"
 	"log"
+
+	"github.com/andrei-cerbulescu/crafty-reverse-proxy/config"
+	"github.com/andrei-cerbulescu/crafty-reverse-proxy/internal/adapters/crafty"
+	"github.com/andrei-cerbulescu/crafty-reverse-proxy/internal/app"
+	"github.com/andrei-cerbulescu/crafty-reverse-proxy/pkg/logger"
 )
 
 func main() {

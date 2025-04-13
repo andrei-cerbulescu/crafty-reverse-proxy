@@ -2,11 +2,12 @@ package crafty
 
 import (
 	"bytes"
-	"craftyreverseproxy/config"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/andrei-cerbulescu/crafty-reverse-proxy/config"
 )
 
 type Crafty struct {
