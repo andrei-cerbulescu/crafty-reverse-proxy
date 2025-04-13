@@ -1,0 +1,22 @@
+api_url: "http://crafty:8443"
+username: "admin"
+password: "password"
+timeout: "2m"
+auto_shutdown: true
+log_level: "INFO"
+
+addresses:
+  - crafty_host:
+      addr: "crafty"
+      port: 25565
+    listener:
+      addr: "localhost"
+      port: 25565
+    protocol: "tcp"
+  - crafty_host:
+      addr: "crafty"
+      port: 25566
+    listener:
+      addr: "localhost"
+      port: 25566
+    protocol: "tcp"
