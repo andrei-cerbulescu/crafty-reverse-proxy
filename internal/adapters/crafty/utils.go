@@ -1,4 +1,4 @@
-package main
+package crafty
 
 func filter[T any](ss []T, test func(T) bool) (ret []T) {
 	for _, s := range ss {

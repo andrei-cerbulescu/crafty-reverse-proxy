@@ -1,20 +1,23 @@
-package main
+package app
 
 import (
+	"craftyreverseproxy/config"
+	"craftyreverseproxy/internal/adapters/crafty"
 	"fmt"
 	"io"
 	"log"
 	"net"
 )
 
-func handleClient(client net.Conn, target string, server ServerType, protocol string) {
+func handleClient(client net.Conn, target string, server config.ServerType, protocol string) {
 	incrementPlayerCount(server)
 	defer decrementPlayerCount(server)
 	serverConnection, err := net.Dial(protocol, target)
 	if err != nil {
 		println("Server not up and running: " + err.Error() + "\n")
-		startMcServer(server)
-		serverConnection = awaitForServerStart(protocol, target)
+		crafty.StartMcServer(server)
+		scheduleStopServerIfEmpty(server)
+		serverConnection = crafty.AwaitForServerStart(protocol, target)
 		if serverConnection == nil {
 			client.Close()
 			return
@@ -38,7 +41,7 @@ func handleClient(client net.Conn, target string, server ServerType, protocol st
 	}
 }
 
-func handleMainServer(server ServerType) {
+func handleMainServer(server config.ServerType) {
 	listenAddr := server.ExternalIp + ":" + server.ExternalPort
 	targetAddr := server.InternalIp + ":" + server.InternalPort
 
@@ -64,7 +67,7 @@ func handleMainServer(server ServerType) {
 	}
 }
 
-func handleSubServers(subServer OthersType, server ServerType) {
+func handleSubServers(subServer config.OthersType, server config.ServerType) {
 	listenAddr := subServer.ExternalIp + ":" + subServer.ExternalPort
 	targetAddr := subServer.InternalIp + ":" + subServer.InternalPort
 
@@ -87,7 +90,7 @@ func handleSubServers(subServer OthersType, server ServerType) {
 	}
 }
 
-func handleServer(server ServerType) {
+func handleServer(server config.ServerType) {
 	handleMainServer(server)
 
 	for _, subServer := range server.Others {
