@@ -9,22 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Host struct {
-	Addr string `yaml:"addr"`
-	Port int    `yaml:"port"`
-}
-
-type OthersType struct {
-	Protocol string `yaml:"protocol"`
-}
-
-type ServerType struct {
-	Protocol  string       `yaml:"protocol"`
-	Listener  Host         `yaml:"listener"`
-	ProxyHost Host         `yaml:"proxy_host"`
-	Others    []OthersType `yaml:"others"`
-}
-
 type Config struct {
 	ApiUrl       string        `yaml:"api_url"`
 	Username     string        `yaml:"username"`
@@ -33,6 +17,17 @@ type Config struct {
 	Timeout      time.Duration `yaml:"timeout"`
 	AutoShutdown bool          `yaml:"auto_shutdown"`
 	Addresses    []ServerType  `yaml:"addresses"`
+}
+
+type ServerType struct {
+	Protocol   string `yaml:"protocol"`
+	Listener   Host   `yaml:"listener"`
+	CraftyHost Host   `yaml:"crafty_host"`
+}
+
+type Host struct {
+	Addr string `yaml:"addr"`
+	Port int    `yaml:"port"`
 }
 
 // NewConfig returns default config
@@ -51,7 +46,7 @@ func NewConfig() Config {
 					Addr: "crafty-reverse-proxy",
 					Port: 3120,
 				},
-				ProxyHost: Host{
+				CraftyHost: Host{
 					Addr: "crafty",
 					Port: 25565,
 				},
