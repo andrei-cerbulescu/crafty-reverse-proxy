@@ -16,6 +16,7 @@ func main() {
 	configPath := "config/config.yaml"
 
 	flag.StringVar(&configPath, "c", "config/config.yaml", "Path to config file")
+	flag.Parse()
 
 	cfg := config.NewConfig()
 	err := cfg.Load(configPath)
@@ -25,8 +26,8 @@ func main() {
 
 	logger := logger.New(cfg.LogLevel)
 
-	crafty := crafty.Crafty{}
-	reverseProxyApp := app.NewApp(cfg, logger, &crafty)
+	crafty := crafty.NewCrafty(cfg)
+	reverseProxyApp := app.NewApp(cfg, logger, crafty)
 
 	reverseProxyApp.Run(ctx)
 }

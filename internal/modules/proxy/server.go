@@ -3,21 +3,23 @@ package proxy
 import (
 	"context"
 	"craftyreverseproxy/config"
+	"craftyreverseproxy/pkg/semaphore"
 	"fmt"
 	"io"
-	"log"
 	"net"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
-const tickerCooldown = 2 * time.Second
+const tickerCooldown = 1 * time.Second
 const awaitTimeout = 5 * time.Minute
+const dialTimeout = 1 * time.Second
 
 type (
 	Logger interface {
 		Debug(format string, args ...any)
 		Info(format string, args ...any)
+		Fail(format string, args ...any)
 		Error(format string, args ...any)
 	}
 	Crafty interface {
@@ -38,18 +40,24 @@ type ProxyServer struct {
 	cfg    config.Config
 	logger Logger
 	crafty Crafty
+
+	startupSemaphore *semaphore.Semaphore
+	shutdownTimer    *time.Timer
+	mu               *sync.Mutex
 }
 
 func NewProxyServer(cfg config.Config, proxyCfg config.ServerType, logger Logger, crafty Crafty) *ProxyServer {
 	return &ProxyServer{
-		listenPort: proxyCfg.Listener.Port,
-		targetPort: proxyCfg.ProxyHost.Port,
-		protocol:   proxyCfg.Protocol,
-		listenAddr: fmt.Sprintf("%s:%d", proxyCfg.Listener.Addr, proxyCfg.Listener.Port),
-		targetAddr: fmt.Sprintf("%s:%d", proxyCfg.ProxyHost.Addr, proxyCfg.ProxyHost.Port),
-		cfg:        cfg,
-		logger:     logger,
-		crafty:     crafty,
+		listenPort:       proxyCfg.Listener.Port,
+		targetPort:       proxyCfg.ProxyHost.Port,
+		protocol:         proxyCfg.Protocol,
+		listenAddr:       fmt.Sprintf("%s:%d", proxyCfg.Listener.Addr, proxyCfg.Listener.Port),
+		targetAddr:       fmt.Sprintf("%s:%d", proxyCfg.ProxyHost.Addr, proxyCfg.ProxyHost.Port),
+		cfg:              cfg,
+		logger:           logger,
+		crafty:           crafty,
+		startupSemaphore: semaphore.New(logger),
+		mu:               &sync.Mutex{},
 	}
 }
 
@@ -86,39 +94,30 @@ func (ps *ProxyServer) handleClient(ctx context.Context, client net.Conn) error 
 	ps.incrementPlayerCount()
 	defer ps.decrementPlayerCount()
 
-	serverConnection, err := net.Dial(ps.protocol, ps.targetAddr)
+	serverConnection, err := ps.connectOrStartServer(ctx)
 	if err != nil {
-		ps.logger.Info("Server not up and running: %v", err)
-		err := ps.crafty.StartMcServer(ps.targetPort)
-		if err != nil {
-			return err
-		}
-
-		ps.scheduleStopServerIfEmpty()
-		serverConnection = ps.awaitForServerStart(ctx, ps.protocol, ps.targetAddr, awaitTimeout, tickerCooldown)
-		if serverConnection == nil {
-			return fmt.Errorf("failed awaiting for server start: %w", ErrTimeoutReached)
-		}
+		return err
 	}
-
 	defer serverConnection.Close()
 
-	ps.logger.Info("Proxying from %s to %s", client.RemoteAddr(), serverConnection.RemoteAddr())
+	ps.logger.Info("Starting proxy from %s to %s", client.RemoteAddr(), serverConnection.RemoteAddr())
 
 	completed := make(chan struct{})
 	go func() {
+		defer func() {
+			completed <- struct{}{}
+			close(completed)
+		}()
 		_, err := io.Copy(client, serverConnection)
 		if err != nil {
-			ps.logger.Error("Proxying from server to client failed: %v", err)
+			ps.logger.Fail("An error occurred copying from server to client: %v", err)
 		}
 		ps.logger.Info("Proxying from %s to %s completed", client.RemoteAddr(), serverConnection.RemoteAddr())
-		completed <- struct{}{}
-		close(completed)
 	}()
 
 	_, err = io.Copy(serverConnection, client)
 	if err != nil {
-		log.Printf("Error copying from client to server: %s", err)
+		ps.logger.Error("Error copying from client to server: %s", err)
 	}
 
 	<-completed
@@ -126,7 +125,32 @@ func (ps *ProxyServer) handleClient(ctx context.Context, client net.Conn) error 
 	return nil
 }
 
-func (ps *ProxyServer) awaitForServerStart(ctx context.Context, protocol, target string, timeout, cooldown time.Duration) net.Conn {
+func (ps *ProxyServer) connectOrStartServer(ctx context.Context) (net.Conn, error) {
+	serverConnection, err := net.DialTimeout(ps.protocol, ps.targetAddr, dialTimeout)
+	if err != nil {
+		acquired := ps.startupSemaphore.TryAcquire(ctx)
+		if acquired {
+			defer ps.startupSemaphore.Release()
+
+			ps.logger.Info("Server is not running. Starting server with port %d", ps.targetPort)
+			err := ps.crafty.StartMcServer(ps.targetPort)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			ps.logger.Info("Server is starting up. Waiting for it to start...")
+		}
+
+		serverConnection, err = ps.awaitForServerStart(ctx, ps.protocol, ps.targetAddr, awaitTimeout, tickerCooldown)
+		if err != nil {
+			return nil, fmt.Errorf("failed awaiting for server start: %w", err)
+		}
+	}
+
+	return serverConnection, nil
+}
+
+func (ps *ProxyServer) awaitForServerStart(ctx context.Context, protocol, target string, timeout, cooldown time.Duration) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -135,43 +159,55 @@ func (ps *ProxyServer) awaitForServerStart(ctx context.Context, protocol, target
 
 	attempt := 1
 
+	ps.logger.Info("Waiting for server :%d to start...", ps.targetPort)
 	for {
 		select {
 		case <-ctx.Done():
-			ps.logger.Error("Timeout waiting for server %s after %s", target, timeout)
-			return nil
+			return nil, ErrTimeoutReached
 		case <-ticker.C:
 			ps.logger.Debug("Attempt %d: connecting to %s (%s)", attempt, target, protocol)
-			conn, err := net.Dial(protocol, target)
-			if err == nil {
-				ps.logger.Info("Server %s is up! Connected on attempt %d", target, attempt)
-				return conn
+			conn, err := net.DialTimeout(protocol, target, dialTimeout)
+			if err != nil {
+				ps.logger.Fail("Connection attempt %d failed: %v", attempt, err)
+				attempt++
+				continue
 			}
-			ps.logger.Info("Connection attempt %d failed: %v", attempt, err)
-			attempt++
+			ps.logger.Info("Server %s is up! Connected on attempt %d", target, attempt)
+			return conn, nil
 		}
 	}
-}
-
-func (ps *ProxyServer) scheduleStopServerIfEmpty() {
-	if !ps.cfg.AutoShutdown {
-		return
-	}
-	time.AfterFunc(ps.cfg.Timeout, func() {
-		if ps.isServerEmpty() {
-			ps.crafty.StopMcServer(ps.targetPort)
-		}
-	})
 }
 
 func (ps *ProxyServer) incrementPlayerCount() {
-	atomic.AddInt32(&ps.playerCount, 1)
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	ps.playerCount++
+
+	if ps.shutdownTimer != nil {
+		_ = ps.shutdownTimer.Stop()
+		ps.shutdownTimer = nil
+	}
 }
 
 func (ps *ProxyServer) decrementPlayerCount() {
-	atomic.AddInt32(&ps.playerCount, -1)
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	ps.playerCount--
+
+	if ps.playerCount == 0 {
+		ps.shutdownTimer = time.AfterFunc(ps.cfg.Timeout, func() {
+			if ps.isServerEmpty() {
+				ps.logger.Info("No players left, shutting down MC server with port %d", ps.targetPort)
+				ps.crafty.StopMcServer(ps.targetPort)
+			}
+		})
+	}
 }
 
 func (ps *ProxyServer) isServerEmpty() bool {
-	return atomic.LoadInt32(&ps.playerCount) == 0
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.playerCount == 0
 }

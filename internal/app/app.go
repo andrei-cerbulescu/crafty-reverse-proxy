@@ -31,6 +31,7 @@ func (app *App) Run(ctx context.Context) {
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	for _, address := range app.cfg.Addresses {
+		wg.Add(1)
 		go func(serverConfig config.ServerType) {
 			defer wg.Done()
 			server := proxy.NewProxyServer(app.cfg, serverConfig, app.logger, app.crafty)
